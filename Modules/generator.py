@@ -1,6 +1,6 @@
 import json, random
 import pandas as pd
-
+from .utils import snap_time
 
 def generate_tasks(config, out_path="Data/tasks.json"):
     random.seed(42)
@@ -8,11 +8,8 @@ def generate_tasks(config, out_path="Data/tasks.json"):
     num_devices = config["num_devices"]
     horizon = config["simulation_horizon_s"]
 
-
-# average tasks per device
     avg_tasks_per_device = n_tasks / num_devices
-    lambda_rate = avg_tasks_per_device / horizon # tasks per second
-
+    lambda_rate = avg_tasks_per_device / horizon
 
     tasks = []
     for dev_id in range(num_devices):
@@ -20,10 +17,11 @@ def generate_tasks(config, out_path="Data/tasks.json"):
         count = 0
         while count < avg_tasks_per_device:
             t += random.expovariate(lambda_rate)
+            t = snap_time(t)
             if t > horizon:
-             break
+                break
             size_kb = max(10.0, random.gauss(config["mean_task_size_kb"], config["std_task_size_kb"]))
-            deadline_ms = random.uniform(1.0, 3.0)
+            deadline_ms = snap_time(random.uniform(1.0, 3.0) / 1000.0) * 1000.0
             priority = 1 if random.random() < 0.8 else 2
             tasks.append({
                 "task_id": f"task_{dev_id}_{count}",
@@ -35,8 +33,7 @@ def generate_tasks(config, out_path="Data/tasks.json"):
             })
             count += 1
 
-
-    # sort tasks by creation time
     tasks = sorted(tasks, key=lambda x: x["creation_time_s"])
     pd.DataFrame(tasks).to_json(out_path, orient="records", lines=True)
     return tasks
+

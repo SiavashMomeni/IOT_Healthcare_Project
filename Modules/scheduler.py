@@ -1,12 +1,11 @@
 from .maths import processing_time_ms
 from .network import transmission_time_ms
-
+from .utils import snap_time
 
 class Scheduler:
     def __init__(self, device_weights, config):
         self.device_weights = device_weights
         self.config = config
-
 
     def decide(self, task):
         w = self.device_weights.get(task["device_id"], self.config["initial_weights"])
