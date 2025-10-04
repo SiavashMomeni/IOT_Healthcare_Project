@@ -1,12 +1,10 @@
 import pandas as pd
 
 
-LEARNING_RATE = 0.1
-
-
 class SDNController:
-    def __init__(self, device_weights):
+    def __init__(self, device_weights, config):
         self.device_weights = device_weights
+        self.lr = config["learning_rate"]
 
 
     def update_weights(self, recent_logs):
@@ -21,7 +19,7 @@ class SDNController:
                 delta = -0.03
             else:
                 delta = 0.0
-        wold_local = self.device_weights[dev]["w_local"]
-        wnew_local = min(1.0, max(0.0, wold_local + LEARNING_RATE*delta))
-        self.device_weights[dev]["w_local"] = wnew_local
-        self.device_weights[dev]["w_offload"] = 1.0 - wnew_local
+            wold_local = self.device_weights[dev]["w_local"]
+            wnew_local = min(1.0, max(0.0, wold_local + self.lr*delta))
+            self.device_weights[dev]["w_local"] = wnew_local
+            self.device_weights[dev]["w_offload"] = 1.0 - wnew_local

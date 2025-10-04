@@ -1,6 +1,6 @@
 PATHS = {
-"fog": {"base_bw_kbps": 20000.0, "base_rtt_ms": 5.0},
-"cloud": {"base_bw_kbps": 5000.0, "base_rtt_ms": 30.0}
+    "fog": {"base_bw_kbps": 20000.0, "base_rtt_ms": 5.0},
+    "cloud": {"base_bw_kbps": 5000.0, "base_rtt_ms": 30.0}
 }
 
 

@@ -1,0 +1,2 @@
+num_tasks,avg_latency_ms,std_latency_ms,sla_violation_rate,avg_energy_j
+2745,380.51585577603873,40.46110449514678,1.0,0.0928168525195102

@@ -1,0 +1,30 @@
+num_tasks: 3000
+num_devices: 200
+simulation_horizon_s: 300 # total time horizon (seconds)
+
+
+mean_task_size_kb: 450
+std_task_size_kb: 50
+
+
+device_cpu_hz: 5.0e8 # 0.5 GHz
+fog_cpu_hz: 5.0e9  # 5 GHz
+cloud_cpu_hz: 2.0e10 # 20 GHz
+
+
+cycles_per_byte: 100
+p_tx: 0.5 # transmission power (W)
+venergy_per_cycle: 1.0e-9 # Joules per cycle
+
+
+fog_workers: 10
+cloud_workers: 5
+
+
+initial_weights:
+  w_local: 0.7
+  w_offload: 0.3
+
+
+round_size: 100
+learning_rate: 0.1
