@@ -7,14 +7,14 @@ mean_task_size_kb: 450
 std_task_size_kb: 50
 
 
-device_cpu_hz: 5.0e8 # 0.5 GHz
-fog_cpu_hz: 5.0e9  # 5 GHz
-cloud_cpu_hz: 2.0e10 # 20 GHz
+device_cpu_hz: 1.0e9 # 1 GHz
+fog_cpu_hz: 1.0e10  # 10 GHz
+cloud_cpu_hz: 4.0e10 # 40 GHz
 
 
 cycles_per_byte: 100
 p_tx: 0.5 # transmission power (W)
-venergy_per_cycle: 1.0e-9 # Joules per cycle
+energy_per_cycle: 1.0e-9 # Joules per cycle
 
 
 fog_workers: 10

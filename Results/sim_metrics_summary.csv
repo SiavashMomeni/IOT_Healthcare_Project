@@ -1,2 +1,2 @@
-num_tasks,avg_latency_ms,std_latency_ms,sla_violation_rate,avg_energy_j
-2745,380.5158536247725,40.45997486717091,1.0,0.09281685213114756
+num_tasks,avg_latency_ms,std_latency_ms,sla_violation_rate,drop_rate,hit_rate,avg_queue_delay_ms,avg_proc_delay_ms,avg_tx_delay_ms,avg_energy_j
+2745,46.24124954329557,5.051557751701258,0.9970856102003643,0.0029143897996357013,0.0,0.10881602914391231,46.10608378870674,0.0,0.046106794104483206
