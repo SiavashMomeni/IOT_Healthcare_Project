@@ -8,7 +8,7 @@ std_task_size_kb: 50
 
 
 device_cpu_hz: 1.0e9 # 1 GHz
-fog_cpu_hz: 1.0e10  # 10 GHz
+fog_cpu_hz: 2.0e10  # 20 GHz
 cloud_cpu_hz: 4.0e10 # 40 GHz
 
 
@@ -28,3 +28,8 @@ initial_weights:
 
 round_size: 100
 learning_rate: 0.1
+
+topology_path: "Data/topology.json"             # مسیر فایل توپولوژی که فرستادی
+default_link_bw_bps: 1000000000            # 1e9 bits/s
+device_access_bw_bytes_per_s: 40000000     # 40e6 bytes/s (40 MB/s)
+default_rtt_s: 0.005                       # 5 ms per link baseline
