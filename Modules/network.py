@@ -262,3 +262,12 @@ class Network:
         for r in path_res:
             reservations.append({"type":"link","link": r["link"], "start": r["start"], "finish": r["finish"], "bits": r["bits"], "task_id": task_id})
         return reservations
+    
+    def estimate_network_delay_ms(self, path_links, size_kb):
+        size_bits = size_kb * 1024 * 8
+        access_bw = self.device_access_bw_bps
+        total_delay_s = size_bits / access_bw
+        for link in path_links:
+            total_delay_s += (size_bits / link.bw_bps) 
+        return total_delay_s * 1000  # ms
+

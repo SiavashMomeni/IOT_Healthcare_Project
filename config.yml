@@ -1,6 +1,6 @@
 num_tasks: 3000
 num_devices: 200
-simulation_horizon_s: 300 # total time horizon (seconds)
+simulation_horizon_s: 600 # total time horizon (seconds)
 
 
 mean_task_size_kb: 450

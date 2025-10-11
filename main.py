@@ -45,6 +45,27 @@ if __name__ == "__main__":
     while events:
         time_now, ev_type, _, payload = heapq.heappop(events)
         time_now = snap_time(time_now)
+        dev_node = network.device_to_node_id(task["device_id"])
+        dest = scheduler.pick_destination_server()  # keep using scheduler for destination selection
+        path_nodes, path_links, total_rtt = network.shortest_path_with_links(dev_node, dest)
+        state = controller.extract_state(task, network, time_now, path_links=path_links)
+        action = controller.select_action(state)   # 0 local, 1 offload
+        # map action to decision
+        if action == 0:
+            decision = "local"
+            meta = {"rl_action": action}
+        else:
+            # before reserving, ask can_transmit
+            size_bits = task["size_kb"] * 1024.0 * 8.0
+            ok, blocking = network.can_transmit(path_links or [], size_bits, src_node=dev_node, now=time_now)
+            if not ok:
+                decision = "drop_by_capacity"
+                meta = {"blocking": blocking, "rl_action": action}
+            else:
+                reservations = network.reserve_access_and_path(path_links, size_bits, src_node=dev_node, now=time_now, task_id=task["task_id"])
+                decision = "offload"
+                meta = {"reservations": reservations, "rl_action": action}
+        
 
         if ev_type=="arrival":
             task = payload
@@ -125,46 +146,43 @@ if __name__ == "__main__":
                 print("offload")
                 # meta contains reservations
                 reservations = meta.get("reservations", [])
-                # compute tx_ms from path_links
-                tx_ms = 0.0
-                size_bits = task["size_kb"] * 1024.0 * 8.0
-                for link in path_links:
-                    tx_ms += (size_bits / link.bw_bps) * 1000.0
-                arrival_fog = snap_time(time_now + tx_ms/1000.0)
+    
+                tx_ms = network.estimate_network_delay_ms(path_links, task["size_kb"])
+                arrival_fog = snap_time(time_now + tx_ms / 1000.0)
 
                 # schedule on fog worker (same logic as before)
                 fog_time_ms, _ = processing_time_ms(task["size_kb"], config["fog_cpu_hz"], config["cycles_per_byte"])
                 idx = min(range(len(fog_busy_until)), key=lambda i: fog_busy_until[i])
                 start = snap_time(max(arrival_fog, fog_busy_until[idx]))
                 queue_delay = (start - task["creation_time_s"]) * 1000
-                print(f"(queue_delay({queue_delay}) + fog_time_ms({fog_time_ms}))={queue_delay + fog_time_ms} > task.deadline_ms={task["deadline_ms"]}")
-                if (queue_delay + fog_time_ms) > task["deadline_ms"]:
-                    # drop because won't meet deadline
-                    # also record drop on links if desired
-                    # record drop on the blocking link(s) if present inside meta
-                    for r in reservations:
-                        if r.get("type")=="link":
-                            r["link"].record_drop(r["bits"])
-                    log = {
-                        "task_id":task["task_id"],
-                        "device_id":task["device_id"],
-                        "decision":"offload",
-                        "arrival_time_s":task["creation_time_s"],
-                        "queue_enter_time_s":time_now,
-                        "start_time_s":None,
-                        "end_time_s":None,
-                        "queue_delay_ms":queue_delay,
-                        "proc_delay_ms":0.0,
-                        "tx_delay_ms":tx_ms,
-                        "total_latency_ms":None,
-                        "energy_j":0.0,
-                        "deadline_ms":task["deadline_ms"],
-                        "status":"drop",
-                        "drop_reason":"deadline_miss"
-                    }
-                    task_logs.append(log)
-                    round_acc.append(log)
-                    continue
+                # print(f"(queue_delay({queue_delay}) + fog_time_ms({fog_time_ms}))={queue_delay + fog_time_ms} > task.deadline_ms={task['deadline_ms']}")
+                # if (queue_delay + fog_time_ms) > task["deadline_ms"]:
+                #     # drop because won't meet deadline
+                #     # also record drop on links if desired
+                #     # record drop on the blocking link(s) if present inside meta
+                #     for r in reservations:
+                #         if r.get("type")=="link":
+                #             r["link"].record_drop(r["bits"])
+                #     log = {
+                #         "task_id":task["task_id"],
+                #         "device_id":task["device_id"],
+                #         "decision":"offload",
+                #         "arrival_time_s":task["creation_time_s"],
+                #         "queue_enter_time_s":time_now,
+                #         "start_time_s":None,
+                #         "end_time_s":None,
+                #         "queue_delay_ms":queue_delay,
+                #         "proc_delay_ms":0.0,
+                #         "tx_delay_ms":tx_ms,
+                #         "total_latency_ms":None,
+                #         "energy_j":0.0,
+                #         "deadline_ms":task["deadline_ms"],
+                #         "status":"drop",
+                #         "drop_reason":"deadline_miss"
+                #     }
+                #     task_logs.append(log)
+                #     round_acc.append(log)
+                #     continue
 
                 end = snap_time(start + fog_time_ms/1000.0)
                 fog_busy_until[idx] = end
@@ -223,7 +241,16 @@ if __name__ == "__main__":
                 }
                 task_logs.append(log)
                 round_acc.append(log)
-
+                    
+            next_state = controller.extract_state(task, network, Q1A, path_links=None)
+            latency = log["total_latency_ms"] if log["total_latency_ms"] is not None else (log.get("proc_delay_ms",0) + log.get("tx_delay_ms",0))
+            # reward design:
+            reward = - latency / max(1.0, task["deadline_ms"])    # negative: lower latency -> larger reward
+            if log["status"] == "drop":
+                reward -= 10.0
+            controller.store_transition(state, action, reward, next_state, done=0.0)
+            # optionally: train a bit each step/round
+            loss = controller.train()
 
         if len(round_acc)>=config["round_size"]:
             controller.update_weights(round_acc)
