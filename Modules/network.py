@@ -85,7 +85,7 @@ class Network:
             raise RuntimeError("Topology not loaded")
         for i in range(num_devices):
             self.device_to_node[f"dev_{i}"] = i % self.node_count
-
+            
     def find_path(self, src_node, dst_node, weight="rtt"):
         """
         Dijkstra on nodes using link.rtt_s as weight (can be extended).
@@ -126,6 +126,63 @@ class Network:
         path_nodes.reverse()
         path_links.reverse()
         return path_nodes, path_links
+    
+    def k_shortest_paths(self, src, dst, K=3):
+        """
+        Find up to K shortest paths using Yen's algorithm.
+        Returns a list of (path_nodes, path_links, total_rtt)
+        """
+        # Step 1: shortest path
+        path_nodes, path_links = self.find_path(src, dst)
+        if not path_nodes:
+            return []
+
+        def path_total_rtt(p_links):
+            return sum(l.rtt_s for l in p_links)
+
+        A = [(path_nodes, path_links, path_total_rtt(path_links))]  # shortest paths found
+        B = []  # candidate paths
+
+        for k in range(1, K):
+            for i in range(len(A[k-1][0]) - 1):
+                spur_node = A[k-1][0][i]
+                root_path_nodes = A[k-1][0][:i+1]
+                root_path_links = A[k-1][1][:i]
+
+                # Copy network and remove links in previous paths
+                removed_links = []
+                for p_nodes, p_links, _ in A:
+                    if len(p_nodes) > i and p_nodes[:i+1] == root_path_nodes:
+                        u = p_nodes[i]
+                        v = p_nodes[i+1]
+                        # remove link (u,v)
+                        for nbr, link in self.adj[u]:
+                            if nbr == v:
+                                self.adj[u].remove((nbr, link))
+                                removed_links.append((u, nbr, link))
+                                break
+
+                # Spur path from spur_node to dst
+                spur_path_nodes, spur_path_links = self.find_path(spur_node, dst)
+                if spur_path_nodes and len(spur_path_nodes) > 1:
+                    total_path_nodes = root_path_nodes[:-1] + spur_path_nodes
+                    total_path_links = root_path_links + spur_path_links
+                    total_rtt = path_total_rtt(total_path_links)
+                    if not any(pn == total_path_nodes for pn, _, _ in B):
+                        B.append((total_path_nodes, total_path_links, total_rtt))
+
+                # Restore removed links
+                for (u, v, link) in removed_links:
+                    self.adj[u].append((v, link))
+
+            if not B:
+                break
+
+            B.sort(key=lambda x: x[2])
+            A.append(B[0])
+            B.pop(0)
+
+        return A
 
     def clean_all_links(self, now):
         for link in self.links:

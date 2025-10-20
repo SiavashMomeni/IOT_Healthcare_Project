@@ -27,7 +27,7 @@ if __name__ == "__main__":
                   default_rtt_s=config.get("default_rtt_s"))
     network.attach_devices(config["num_devices"])
     scheduler = Scheduler(device_weights, config, network)
-    controller = SDNController(device_weights, config)
+    controller = SDNController(device_weights, config, network)
 
     events = []
     counter = 0
@@ -47,7 +47,7 @@ if __name__ == "__main__":
         time_now = snap_time(time_now)
         dev_node = network.device_to_node_id(task["device_id"])
         dest = scheduler.pick_destination_server()  # keep using scheduler for destination selection
-        path_nodes, path_links, total_rtt = network.shortest_path_with_links(dev_node, dest)
+        path_nodes, path_links, network_delay = SDNController.select_path(dev_node, dest)
         state = controller.extract_state(task, network, time_now, path_links=path_links)
         action = controller.select_action(state)   # 0 local, 1 offload
         # map action to decision
