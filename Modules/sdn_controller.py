@@ -1,94 +1,174 @@
-import pandas as pd
+# Controllers/sdn_controller.py
+"""
+SDNController: رابط بین شبکه (Network) و عامل‌های RL.
+این ماژول دو عامل DQN را نگهداری می‌کند:
+ - decision_agent: تصمیم local (0) یا offload (1)
+ - router_agent: انتخاب مسیر از بین کاندیدها (0..K-1)
+
+توابع مهم:
+ - select_decision(device_id, task, time_now)
+ - select_path(src_node, dst_node, size_kb, time_now)
+ - get_candidate_paths(...)  # wrapper روی network
+"""
 import numpy as np
-from Controllers.DQL import DQNRouter
+from Controllers.DQL import DeepQLearner
 
 class SDNController:
-    def __init__(self, device_weights, network, config):
-        self.device_weights = device_weights
+    def __init__(self, network, config):
         self.network = network
         self.config = config
-        self.lr = 1e-2  # نرخ یادگیری برای وزن‌های دستگاه‌ها
 
-        # Deep Q-Network router
-        self.router_agent = DQNRouter(
-            n_states=2,     # src, dst, u_local, mean_delay, std_delay
-            n_actions=3,    # تعداد مسیرهای کاندید
-            lr=1e-3,
-            gamma=0.9,
-            epsilon=0.1
-        )
+        # پارامترها
+        self.k_paths = config.get("k_paths", 5)
+        self.decision_state_dim = config.get("decision_state_dim", 3)  # تغییرپذیر
+        self.router_state_dim = config.get("router_state_dim", 1)
+        self.decision_action_dim = 2   # {0: local, 1: offload}
+        self.router_action_dim = self.k_paths  # انتخاب یکی از k مسیر
 
-        # بافر برای اپیزودهای RL در صورت نیاز
-        self.pending = []
+        # عوامل DQN (از DeepQLearner موجود در Controllers/DQL.py استفاده می‌کنیم)
+        self.decision_agent = DeepQLearner(state_dim=self.decision_state_dim,
+                                           action_dim=self.decision_action_dim,
+                                           lr=config.get("dqn_lr", 1e-3),
+                                           gamma=config.get("dqn_gamma", 0.99))
+        self.router_agent = DeepQLearner(state_dim=self.router_state_dim,
+                                         action_dim=self.router_action_dim,
+                                         lr=config.get("dqn_lr", 1e-3),
+                                         gamma=config.get("dqn_gamma", 0.99))
 
-    # ------------------------------------------------------------------
-    def update_weights(self, recent_logs):
-        df = pd.DataFrame(recent_logs)
-        if df.empty:
-            return
+    # -----------------------
+# --- درون SDNController ---
 
-        df["sla_violation"] = df["status"].apply(lambda x: 0 if x == "hit" else 1)
-        off_df = df[df.decision == "offload"]
-        loc_df = df[df.decision == "local"]
+    def get_candidate_paths(self, src_node, dst_node):
+        """
+        برمی‌گرداند لیست تمام مسیرهای ثابت بین src و dst.
+        اگر قبلاً در cache موجود است، از آن استفاده می‌کند.
+        """
+        key = (src_node, dst_node)
+        if not hasattr(self, "_path_cache"):
+            self._path_cache = {}
 
-        off_rate = off_df.sla_violation.mean() if not off_df.empty else 0.0
-        loc_rate = loc_df.sla_violation.mean() if not loc_df.empty else 0.0
-
-        for _, rec in df.iterrows():
-            dev = rec.device_id
-            if rec.decision == "offload" and off_rate > loc_rate:
-                delta = 0.05
-            elif rec.decision == "local" and loc_rate > off_rate:
-                delta = -0.03
+        if key not in self._path_cache:
+            k = self.k_paths
+            if hasattr(self.network, "k_shortest_paths"):
+                paths = self.network.k_shortest_paths(src_node, dst_node, K=k)
+                formatted = []
+                for p in paths:
+                    if isinstance(p, tuple) and len(p) >= 2:
+                        formatted.append((p[0], p[1]))  # (nodes, links)
+                    else:
+                        formatted.append((p, None))
+                self._path_cache[key] = formatted
             else:
-                delta = 0.0
+                # فقط کوتاه‌ترین مسیر
+                path_nodes, path_links = self.network.find_path(src_node, dst_node, weight="rtt")
+                if path_nodes:
+                    self._path_cache[key] = [(path_nodes, path_links)]
+                else:
+                    self._path_cache[key] = []
+        return self._path_cache[key]
 
-            wold_local = self.device_weights[dev]["w_local"]
-            wnew_local = min(1.0, max(0.0, wold_local + self.lr * delta))
-            self.device_weights[dev]["w_local"] = wnew_local
-            self.device_weights[dev]["w_offload"] = 1.0 - wnew_local
+    # -------------------------------------------------------
+    def select_path(self, src_node, dst_node, size_kb, time_now):
+        """
+        انتخاب مسیر بر اساس state (src,dst)
+        - state_id عدد یکتا برای (src,dst)
+        - اکشن = شماره مسیر
+        - پاداش = -delay
+        """
+        candidates = self.get_candidate_paths(src_node, dst_node)
+        if not candidates:
+            return None, None, None
 
-    # ------------------------------------------------------------------
-    def select_path(self, src, dst):
-        """
-        انتخاب مسیر با DQN بین k مسیر کوتاه‌ترین.
-        """
-        # گرفتن 5 مسیر کاندید از توپولوژی (باید در network پیاده‌سازی شده باشه)
-        paths = self.network.k_shortest_paths(src, dst, k=5)
-        if not paths:
+        # ساخت شناسه یکتا برای state
+        state_id = self._get_state_id(src_node, dst_node)
+        state = np.array([state_id], dtype=np.float32)
+
+        # انتخاب اکشن از بین مسیرها
+        action = int(self.router_agent.select_action(state))
+        idx = action % len(candidates)
+        path_nodes, path_links = candidates[idx]
+
+        # محاسبه تأخیر مسیر انتخابی
+        delay_ms = self.network.estimate_network_delay_ms(path_links, size_kb)
+        reward = -float(delay_ms)
+
+        # آموزش DQN روی همین state ثابت
+        next_state = state.copy()
+        try:
+            self.router_agent.store_transition(state, action, reward, next_state, False)
+            self.router_agent.train_step()
+        except Exception:
+            pass
+
+        return path_nodes, path_links, delay_ms
+
+    # -------------------------------------------------------
+    def _get_state_id(self, src_node, dst_node):
+        """برمی‌گرداند یک اندیس عددی یکتا برای جفت (src, dst)"""
+        if not hasattr(self, "_state_index_map"):
+            self._state_index_map = {}
+            self._next_state_id = 0
+
+        key = (src_node, dst_node)
+        if key not in self._state_index_map:
+            self._state_index_map[key] = self._next_state_id
+            self._next_state_id += 1
+        return self._state_index_map[key]
+
+
+    # -----------------------
+    def estimate_path_delay_ms(self, path_links, size_kb):
+        """اگر لینک‌ها داده شدند، از network.estimate_network_delay_ms استفاده کن"""
+        if path_links is None:
+            # اگر فقط nodes داده شد، محاسبه را با find_path دوباره انجام بده
             return None
+        return self.network.estimate_network_delay_ms(path_links, size_kb)
 
-        # تاخیر تخمینی هر مسیر
-        delays = [self.network.estimate_network_delay_ms(p) for p in paths]
-        mean_delay = np.mean(delays)
-        std_delay = np.std(delays)
+    # -----------------------
+    def select_decision(self, device_id, task, time_now):
+        """
+        تصمیم‌گیری local vs offload با استفاده از decision_agent.
+        state ساده: [device_load_fraction, recent_offload_ratio, mean_path_util]
+        توجه: این state می‌توانید بنا بر نیاز تغییر بدی.
+        خروجی: (decision, d_state, d_action)
+        """
+        # نمونه‌سازی state (ساده و قابل سفارشی‌سازی)
+        # device load proxy:
+        dev_node = self.network.device_to_node_id(device_id)
+        if dev_node is None:
+            dev_node = int(device_id.split("_")[1]) % self.network.node_count
 
-        # ضریب local/offload فعلی
-        u_local = self.device_weights[src].get("w_local", 0.5)
+        # load estimate: میانگین تعداد رزرو‌ها روی لینک‌های خروجی
+        loads = []
+        for nbr, link in self.network.adj[dev_node]:
+            loads.append(len(link.reservations))
+        device_load = float(np.mean(loads)) if loads else 0.0
+        device_load_norm = device_load / max(1.0, self.config.get("load_norm_div", 10.0))
 
-        # ساخت state برای DQN
-        state = np.array([src, dst, u_local, mean_delay, std_delay], dtype=np.float32)
+        # recent offload ratio می‌توانی از metrics یا logs استخراج کنی؛ فعلاً 0.5 فرض کن
+        recent_offload_ratio = 0.5
 
-        # انتخاب مسیر توسط DQN
-        action = self.router_agent.select_action(state)
-        chosen_path = paths[action % len(paths)]  # احتیاط در صورت کمتر بودن مسیرها
+        # mean path utilization (میانگین استفاده لینک‌ها در کل شبکه) - نمونه ساده
+        path_util = 0.0
+        # state
+        state = np.array([device_load_norm, recent_offload_ratio, path_util], dtype=np.float32)
 
-        # محاسبه پاداش (منفی تاخیر و انحراف معیار)
-        reward = - (delays[action] + 0.3 * std_delay)
+        action = self.decision_agent.select_action(state)
+        decision = "local" if int(action) == 0 else "offload"
+        return decision, state, int(action)
 
-        # حالت بعدی (ساده‌سازی: همون state با delay مسیر انتخاب‌شده)
-        next_state = np.array([src, dst, u_local, delays[action], std_delay], dtype=np.float32)
 
-        # ذخیره در حافظه RL و آموزش مرحله‌ای
-        self.router_agent.store((state, action, reward, next_state))
-        self.router_agent.train_step()
+    # -----------------------
+    def update_decision_agent(self, state, action, reward):
+        """ذخیره و آموزش decision agent"""
+        next_state = state.copy()
+        try:
+            self.decision_agent.store_transition(state, action, reward, next_state, False)
+            self.decision_agent.train_step()
+        except Exception:
+            pass
 
-        path_nodes = chosen_path
-        path_links = [(chosen_path[i], chosen_path[i+1]) for i in range(len(chosen_path)-1)]
-
-        return path_nodes, path_links, delays[action]
-
-    # ------------------------------------------------------------------
-    def get_device_weights(self, dev_id):
-        """برای debug"""
-        return self.device_weights.get(dev_id, {"w_local": 0.5, "w_offload": 0.5})
+    # -----------------------
+    def log_metrics_snapshot(self):
+        """اختیاری: استخراج آمار لینک/مسیر برای logging"""
+        return self.network.snapshot_link_stats()

@@ -253,7 +253,7 @@ if __name__ == "__main__":
             loss = controller.train()
 
         if len(round_acc)>=config["round_size"]:
-            controller.update_weights(round_acc)
+            controller.record_weights(round_acc)
             snapshot = {"round":len(weight_logs)+1}
             for dev, ws in device_weights.items():
                 snapshot[f"{dev}_w_local"] = ws["w_local"]

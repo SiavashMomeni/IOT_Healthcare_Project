@@ -18,7 +18,7 @@ class DQN(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-class DQNRouter:
+class DQNLearner:
     def __init__(self, n_states=2, n_actions=5, lr=1e-3, gamma=0.9, epsilon=0.1):
         self.model = DQN(n_states, n_actions)
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
