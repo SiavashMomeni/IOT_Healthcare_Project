@@ -3,11 +3,12 @@ import heapq
 from collections import defaultdict
 
 class Link:
-    def __init__(self, u, v, bw_bps=1e9, rtt_s=0.005):
+    def __init__(self, u, v, bw_bps=1e9, rtt_s=0.002):
         self.u = int(u)
         self.v = int(v)
         self.bw_bps = float(bw_bps)   # bits per second
         self.rtt_s = float(rtt_s)     # seconds (prop/RTT contribution)
+        self.delay_ms = 1.0e9 / bw_bps
         self.reservations = []        # list of dict: {"start":, "finish":, "bits":, "task_id":}
         # stats
         self.total_reserved_bits = 0.0
@@ -190,27 +191,39 @@ class Network:
 
     def can_reserve_on_path(self, path_links, size_kb, now, safety_factor=0.95):
         """
-        window reservation check for each link: if reserved + this task bits > capacity_in_window * safety_factor -> fail
-        size_kb in KB
-        Returns (True, None) or (False, blocking_link)
+        Check if we can reserve enough bandwidth along a path for a given task size.
+        size_kb: task size in KB
+        safety_factor: fraction of link capacity considered usable (e.g. 0.95 means 95%)
+        Returns (True, None) if successful, else (False, blocking_link)
         """
-        size_bytes = size_kb * 1024.0
-        size_bits = size_bytes * 8.0
-        # cleanup old reservations
+        size_bits = size_kb * 8 * 1024.0
+
+        # Cleanup old reservations
         for link in path_links:
             link.cleanup(now)
 
         for link in path_links:
-            transfer_time = size_bits / link.bw_bps
-            if transfer_time <= 0:
-                return False, link
+            # Define a reasonable time window (e.g. 50ms)
+            window_dur = max(link.delay_ms / 1000.0, 0.05)  # seconds
             window_start = now
-            window_end = now + transfer_time
+            window_end = now + window_dur
+
+            # Current reserved bits in this time window
             reserved = link.reserved_bits_in_window(window_start, window_end)
-            capacity_bits_in_window = link.bw_bps * transfer_time
-            if (reserved + size_bits) > (capacity_bits_in_window * safety_factor):
+
+            # Max capacity available in this window
+            capacity_bits_in_window = link.bw_bps * window_dur * safety_factor
+
+            ratio = (reserved + size_bits) / capacity_bits_in_window
+            print(f"[DEBUG] can_reserve_on_path link=({link.u}->{link.v}), "
+                f"reserved={reserved:.2f}, capacity={capacity_bits_in_window:.2f}, ratio={ratio:.3f}")
+
+            # If reservation exceeds safe capacity, block it
+            if (reserved + size_bits) > capacity_bits_in_window:
                 return False, link
+
         return True, None
+
 
     def reserve_on_path(self, path_links, size_kb, now, task_id=None):
         """
@@ -293,7 +306,7 @@ class Network:
             a_end = now + access_transfer_time
             reserved_access_bits = self.access_reserved_bits_in_window(src_node, a_start, a_end)
             capacity_access_bits = access_bw * access_transfer_time
-            print(f"[DEBUG] reserved={reserved_access_bits:.2f}, capacity={capacity_access_bits:.2f}, ratio={reserved_access_bits / capacity_access_bits:.3f}")
+            print(f"[DEBUG] can_transmit reserved={reserved_access_bits:.2f}, capacity={capacity_access_bits:.2f}, ratio={reserved_access_bits / capacity_access_bits:.3f}")
             if reserved_access_bits > (capacity_access_bits * safety_factor):
                 return False, ("access_link", src_node)
                         

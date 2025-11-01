@@ -64,6 +64,7 @@ class Scheduler:
         size_bytes = size_kb * 1024.0
         size_bits = size_bytes * 8.0
         ok, blocking = self.network.can_transmit(path_links, size_bits, src_node=dev_node, now=time_now, safety_factor=0.95)
+        print(f"[DEBUG] scheduler path_links: {[ (l.u, l.v) for l in path_links ]}")
         if not ok:
             # drop یا fallback
             record_task( "drop_by_capacity", float('inf'), path_util)
