@@ -293,6 +293,7 @@ class Network:
             a_end = now + access_transfer_time
             reserved_access_bits = self.access_reserved_bits_in_window(src_node, a_start, a_end)
             capacity_access_bits = access_bw * access_transfer_time
+            print(f"[DEBUG] reserved={reserved_access_bits:.2f}, capacity={capacity_access_bits:.2f}, ratio={reserved_access_bits / capacity_access_bits:.3f}")
             if reserved_access_bits > (capacity_access_bits * safety_factor):
                 return False, ("access_link", src_node)
                         
@@ -327,4 +328,5 @@ class Network:
         for link in path_links:
             total_delay_s += (size_bits / link.bw_bps) 
         return total_delay_s * 1000  # ms
+    
 

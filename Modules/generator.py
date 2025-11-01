@@ -21,7 +21,7 @@ def generate_tasks(config, out_path="Data/tasks.json"):
             if t > horizon:
                 break
             size_kb = max(10.0, random.gauss(config["mean_task_size_kb"], config["std_task_size_kb"]))
-            deadline_ms = snap_time(random.uniform(1.0, 3.0) / 1000.0) * 1000.0
+            deadline_ms = snap_time(random.uniform(20.0, 30.0) / 1000.0) * 1000.0
             priority = 1 if random.random() < 0.8 else 2
             tasks.append({
                 "task_id": f"task_{dev_id}_{count}",

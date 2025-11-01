@@ -1,6 +1,7 @@
 num_tasks: 3000
 num_devices: 200
 simulation_horizon_s: 600 # total time horizon (seconds)
+monitor_window_s: 30
 
 
 mean_task_size_kb: 450
@@ -29,7 +30,7 @@ initial_weights:
 round_size: 100
 learning_rate: 0.1
 
-topology_path: "Data/topology.json"             # مسیر فایل توپولوژی که فرستادی
-default_link_bw_bps: 1000000000            # 1e9 bits/s
+topology_path: "Data/topology.json"             
+default_link_bw_bps: 10000000000            # 1e10 bits/s
 device_access_bw_bytes_per_s: 40000000     # 40e6 bytes/s (40 MB/s)
 default_rtt_s: 0.005                       # 5 ms per link baseline

@@ -11,6 +11,7 @@ SDNController: رابط بین شبکه (Network) و عامل‌های RL.
  - get_candidate_paths(...)  # wrapper روی network
 """
 import numpy as np
+import pandas as pd
 from Controllers.DQL import DeepQLearner
 
 class SDNController:
@@ -20,7 +21,7 @@ class SDNController:
 
         # پارامترها
         self.k_paths = config.get("k_paths", 5)
-        self.decision_state_dim = config.get("decision_state_dim", 3)  # تغییرپذیر
+        self.decision_state_dim = config.get("decision_state_dim", 2)  # تغییرپذیر
         self.router_state_dim = config.get("router_state_dim", 1)
         self.decision_action_dim = 2   # {0: local, 1: offload}
         self.router_action_dim = self.k_paths  # انتخاب یکی از k مسیر
@@ -145,17 +146,35 @@ class SDNController:
         device_load = float(np.mean(loads)) if loads else 0.0
         device_load_norm = device_load / max(1.0, self.config.get("load_norm_div", 10.0))
 
-        # recent offload ratio می‌توانی از metrics یا logs استخراج کنی؛ فعلاً 0.5 فرض کن
-        recent_offload_ratio = 0.5
+        # استخراج recent_offload_ratio از متریک‌ها یا لاگ‌ها
+        recent_logs = self.metrics.get_recent_logs() if hasattr(self, "metrics") else []
+        if recent_logs:
+            df = pd.DataFrame(recent_logs)
+            total = len(df)
+            offloads = len(df[df["decision"] == "offload"])
+            recent_offload_ratio = offloads / total if total > 0 else 0.5
+        else:
+            recent_offload_ratio = 0.5
 
-        # mean path utilization (میانگین استفاده لینک‌ها در کل شبکه) - نمونه ساده
-        path_util = 0.0
-        # state
-        state = np.array([device_load_norm, recent_offload_ratio, path_util], dtype=np.float32)
+        # محاسبه میانگین استفاده لینک‌ها از شبکه
+        link_stats = self.network.snapshot_link_stats()
+        if link_stats:
+            utilizations = []
+            for l in link_stats:
+                bw = l["bw_bps"]
+                used = l["total_reserved_bits"]
+                util = used / (bw * self.config["monitor_window_s"]) if bw > 0 else 0
+                utilizations.append(util)
+            path_util = np.mean(utilizations) if utilizations else 0.0
+        else:
+            path_util = 0.0
+
+        # ساخت state برای DQN
+        state = np.array([recent_offload_ratio, path_util], dtype=np.float32)
 
         action = self.decision_agent.select_action(state)
         decision = "local" if int(action) == 0 else "offload"
-        return decision, state, int(action)
+        return decision, state, int(action), path_util
 
 
     # -----------------------

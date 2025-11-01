@@ -1,2 +1,2 @@
-num_tasks,avg_latency_ms,std_latency_ms,sla_violation_rate,drop_rate,hit_rate,avg_queue_delay_ms,avg_proc_delay_ms,avg_tx_delay_ms,avg_energy_j
-2745,2.259999999994733,0.2474358296521787,,0.9817850637522769,0.016757741347905284,6.98677370030545,0.04116575591985428,6.986549878731998,0.0
+num_tasks,avg_latency_ms,std_latency_ms,sla_violation_rate,drop_rate,hit_rate,avg_queue_delay_ms,avg_proc_delay_ms,avg_tx_delay_ms,avg_energy_j,recent_offload_ratio,mean_path_util,mean_recent_latency
+2745,24.488185198534087,2.0442816717680934,,0.9978142076502732,0.0007285974499089253,0.02597200622087321,0.004845173041894354,0.025983324724379253,1.2172879998379496e-05,0.005,0.0,inf

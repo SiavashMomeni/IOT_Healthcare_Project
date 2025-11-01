@@ -8,12 +8,12 @@ Scheduler: منطق سطح تسک. این ماژول وظیفه دارد برا�
 ورودی‌ها: network (Network instance), sdn_controller (SDNController instance), config
 """
 import numpy as np
+from Modules.metrics import record_task  
 
 class Scheduler:
-    def __init__(self, network, sdn_controller, metrics, config):
+    def __init__(self, network, sdn_controller, config):
         self.network = network
         self.sdn = sdn_controller
-        self.metrics = metrics
         self.config = config
 
     def decide(self, task, time_now):
@@ -25,13 +25,13 @@ class Scheduler:
         dev = task["device_id"]
         size_kb = task.get("size_kb", self.config.get("default_task_kb", 100))
         # 1) اول از SDNController می‌پرسیم چه تصمیمی بهتره (local/offload)
-        decision, d_state, d_action = self.sdn.select_decision(dev, task, time_now)
+        decision, d_state, d_action, path_util = self.sdn.select_decision(dev, task, time_now)
 
         if decision == "local":
             # اجرای محلی (ساده: محاسبه زمان پردازش محلی و لاگ)
             local_time_ms, _ = self._local_processing_time_ms(task)
             sla_hit = (local_time_ms <= task.get("deadline_ms", float('inf')))
-            self.metrics.log_task(task["task_id"], dev, "local", local_time_ms, sla_hit)
+            record_task("local", local_time_ms, path_util)
             # به عامل تصمیم پاداش بده
             reward = -float(local_time_ms)
             self.sdn.update_decision_agent(d_state, d_action, reward)
@@ -44,7 +44,7 @@ class Scheduler:
             dev_node = int(dev.split("_")[1]) % self.network.node_count
 
         # انتخاب مقصد سرور توسط قبلی‌ها (مثلاً pick_destination_server)
-        dest = self.sdn.network.get_least_loaded_node([n for n, nd in self.network.nodes.items() if nd.get("color") == "blue"]) \
+        dest = self.network.get_least_loaded_node([n for n, nd in self.network.nodes.items() if nd.get("color") == "blue"]) \
                if hasattr(self.network, "get_least_loaded_node") else None
         if dest is None:
             # fallback: local
@@ -55,7 +55,7 @@ class Scheduler:
         if path_nodes is None:
             # اگر نتوان مسیر گرفت => local
             local_time_ms, _ = self._local_processing_time_ms(task)
-            self.metrics.log_task(task["task_id"], dev, "local", local_time_ms, True)
+            record_task(task["task_id"], dev, "local", local_time_ms, path_util)
             reward = -float(local_time_ms)
             self.sdn.update_decision_agent(d_state, d_action, reward)
             return "local", None, None, {"reason": "no_path"}
@@ -63,10 +63,10 @@ class Scheduler:
         # 3) چک ظرفیت و رزرو در network (با can_transmit / reserve_access_and_path)
         size_bytes = size_kb * 1024.0
         size_bits = size_bytes * 8.0
-        ok, blocking = self.network.can_transmit(path_links, size_bits, src_node=dev_node, now=time_now, safety_factor=1.0)
+        ok, blocking = self.network.can_transmit(path_links, size_bits, src_node=dev_node, now=time_now, safety_factor=0.95)
         if not ok:
             # drop یا fallback
-            self.metrics.log_task(task["task_id"], dev, "drop_by_capacity", float('inf'), False)
+            record_task( "drop_by_capacity", float('inf'), path_util)
             # به decision agent پاداش منفی بده
             self.sdn.update_decision_agent(d_state, d_action, -100.0)
             return "drop_by_capacity", None, [blocking], {"reason":"link_capacity","blocking":blocking}
@@ -74,7 +74,7 @@ class Scheduler:
         # reserve and execute offload
         reservations = self.network.reserve_access_and_path(path_links, size_bits, src_node=dev_node, now=time_now, task_id=task["task_id"])
         sla_hit = (delay_ms <= task.get("deadline_ms", float('inf')))
-        self.metrics.log_task(task["task_id"], dev, "offload", delay_ms, sla_hit)
+        record_task( "offload", delay_ms, path_util)
 
         # به decision agent پاداش بده
         reward = -float(delay_ms)

@@ -18,9 +18,9 @@ class DQN(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-class DQNLearner:
-    def __init__(self, n_states=2, n_actions=5, lr=1e-3, gamma=0.9, epsilon=0.1):
-        self.model = DQN(n_states, n_actions)
+class DeepQLearner:
+    def __init__(self, state_dim=2, action_dim=5, lr=1e-3, gamma=0.9, epsilon=0.1):
+        self.model = DQN(state_dim, action_dim)
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
         self.gamma = gamma
         self.epsilon = epsilon
