@@ -21,6 +21,7 @@ class DQN(nn.Module):
 class DeepQLearner:
     def __init__(self, state_dim=2, action_dim=5, lr=1e-3, gamma=0.9, epsilon=0.1):
         self.model = DQN(state_dim, action_dim)
+        self.action_dim = action_dim
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
         self.gamma = gamma
         self.epsilon = epsilon
@@ -29,7 +30,7 @@ class DeepQLearner:
 
     def select_action(self, state):
         if random.random() < self.epsilon:
-            return random.randint(0, 2)
+            return random.randint(0, self.action_dim - 1)
         state = torch.FloatTensor(state).unsqueeze(0)
         q_values = self.model(state)
         return torch.argmax(q_values).item()

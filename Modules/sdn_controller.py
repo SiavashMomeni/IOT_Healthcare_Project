@@ -13,6 +13,7 @@ SDNController: رابط بین شبکه (Network) و عامل‌های RL.
 import numpy as np
 import pandas as pd
 from Controllers.DQL import DeepQLearner
+from Modules.metrics import record_decision_reward, record_selection_reward, get_decision_reward_stats, get_selection_reward_stats
 
 class SDNController:
     def __init__(self, network, config):
@@ -92,13 +93,18 @@ class SDNController:
         # محاسبه تأخیر مسیر انتخابی
         delay_ms = self.network.estimate_network_delay_ms(path_links, size_kb)
         reward = -float(delay_ms)
+        decision_avg, decision_std = get_selection_reward_stats()
+        reward_norm = (reward - decision_avg) / (decision_std + 1e-6)
+        record_selection_reward(reward)
 
         # آموزش DQN روی همین state ثابت
         next_state = state.copy()
         try:
-            self.router_agent.store_transition(state, action, reward, next_state, False)
+            transition = (state, action, reward_norm, next_state)
+            self.router_agent.store(transition)
             self.router_agent.train_step()
-        except Exception:
+        except Exception as e:
+            print(f"[ERROR] router agent update failed: {e}")
             pass
 
         return path_nodes, path_links, delay_ms
@@ -182,9 +188,12 @@ class SDNController:
         """ذخیره و آموزش decision agent"""
         next_state = state.copy()
         try:
-            self.decision_agent.store_transition(state, action, reward, next_state, False)
+            transition = (state, action, reward, next_state)
+            self.decision_agent.store(transition)
+            record_decision_reward(reward)
             self.decision_agent.train_step()
-        except Exception:
+        except Exception as e:
+            print(f"[ERROR] decision agent update failed: {e}")
             pass
 
     # -----------------------
