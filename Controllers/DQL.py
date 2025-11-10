@@ -43,6 +43,8 @@ class DeepQLearner:
     def train_step(self):
         if len(self.memory) < self.batch_size:
             return
+        if self.epsilon > 0.05:
+            self.epsilon *= 0.995  # ← هر اپیزود ک    
         batch = random.sample(self.memory, self.batch_size)
         states, actions, rewards, next_states = zip(*batch)
         states = torch.FloatTensor(states)

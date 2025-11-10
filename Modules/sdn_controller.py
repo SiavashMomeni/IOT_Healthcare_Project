@@ -28,14 +28,21 @@ class SDNController:
         self.router_action_dim = self.k_paths  # انتخاب یکی از k مسیر
 
         # عوامل DQN (از DeepQLearner موجود در Controllers/DQL.py استفاده می‌کنیم)
-        self.decision_agent = DeepQLearner(state_dim=self.decision_state_dim,
-                                           action_dim=self.decision_action_dim,
-                                           lr=config.get("dqn_lr", 1e-3),
-                                           gamma=config.get("dqn_gamma", 0.99))
-        self.router_agent = DeepQLearner(state_dim=self.router_state_dim,
-                                         action_dim=self.router_action_dim,
-                                         lr=config.get("dqn_lr", 1e-3),
-                                         gamma=config.get("dqn_gamma", 0.99))
+        self.decision_agent = DeepQLearner(
+            state_dim=self.decision_state_dim,
+            action_dim=self.decision_action_dim,
+            lr=5e-4,                # ← learning rate کمتر برای پایداری بهتر
+            gamma=0.95,             # ← تخفیف کمتر برای تمرکز روی پاداش‌های نزدیک‌تر
+            epsilon=0.9             # ← شروع با exploration بالا
+        )
+
+        self.router_agent = DeepQLearner(
+            state_dim=self.router_state_dim,
+            action_dim=self.router_action_dim,
+            lr=3e-4,                # ← یادگیری نرم‌تر برای جلوگیری از stuck شدن
+            gamma=0.99,
+            epsilon=0.9             # ← exploration بالا
+        )
 
     # -----------------------
 # --- درون SDNController ---
